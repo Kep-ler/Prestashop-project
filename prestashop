@@ -1,0 +1,122 @@
+
+PrestaShop Installation on AWS Free Tier Final Documentation 
+Practical  
+//Prestashop (https://www.prestashop.com/en) is an Open Source Software. 
+//Create a New Server Instance and Install PrestaShop on the Instance.  
+//Your new Prestashop Installation should have a publicly accessible URL (use default from your hosting provider).  
+//1. Submit the URL to the working Prestashop Installation hosted on your new Instance.  2. Submit a step by step documentation of your implementation process. Include Screenshots of  your AWS Console and relevant configuration decisions taken. 
+//Important: Your Database should not be hosted on the same Server hosting your Application.  
+//Important: Use only the Free-Tier of Amazon Web Services or similar hosting platforms  to answer this.
+
+
+Final Working URL 
+Front office: http://51.20.136.144/index.php
+Back office: http://51.20.136.144/admin_mystore_1771494920/index.php
+
+
+
+All steps were performed using only AWS Free Tier resources:t3.micro EC2 + db.t3.micro RDS MySQL. 
+
+
+  
+Creating the EC2 Instance - Instance type: t2.micro  t3.micro Free Tier eligible
+- AMI: Amazon Linux 2023 
+
+
+
+Key pair: prestashop-key.pem (downloaded) - 
+Security group inbound rules: - SSH (22) 
+initially my IP only - HTTP (80) 0.0.0.0/0 - HTTPS (443) 0.0.0.0/0 
+Struggle : SSH connection failed after some time. 
+Cause : My laptop’s public IP changed (dynamic ISP IP). 
+Solution : - Checked current IP:  curl ifconfig.me  
+- Updated EC2 security group to allow SSH from the new IP. 
+SSH reconnected successfully. 
+
+
+
+
+
+
+
+
+
+Installing Apache & Confirming Web Server  sudo dnf install httpd -y sudo systemctl enable --now httpd  Opened http://51.21.222.43 in browser → saw It works! Apache httpd web server confirmed running. 
+
+
+
+
+Tried  wget  directly on server → some download links were broken or timed out. Solution  : - Downloaded PrestaShop 9.0.3 ZIP file on my local laptop. 
+- Uploaded using  scp :  scp -i prestashop-key.pem prestashop_9.0.3.zip ec2-user@51.20.136.144:/home/ec2-user/  
+Multiple struggles during upload 
+→Wrong .pem file path: fixed by using full path 
+→Permission denied (key too open)
+→fixed: chmod 400 prestashop-key.pem  - 
+→Wrong destination path, corrected to  /var/www/html  - 
+→SSH key not recognized : verified correct public IP and key After upload
+→sudo unzip prestashop_9.0.3.zip -d /var/www/html 
+→sudo chown -R apache:apache /var/www/html sudo chmod -R 755 /var/www/html  
+
+
+PHP Version Incompatibility When opening the installer (http://51.20.136.144/install/): Error  : PrestaShop requires PHP 8.1 8.4, but server was running PHP 8.5.1. 
+Solution  : - Installed compatible PHP 8.2 + required extensions:  sudo dnf install php8.2 php8.2-fpm php8.2-mysqlnd php8.2-gd php8.2-intl php8.2-mbstring php8.2-xml php8.2-curl php8.2-zip -y  
+- Restarted services:  sudo systemctl restart httpd php-fpm  
+Installer page now loaded correctly. 
+
+
+
+Missing PHP Extensions Installer system compatibility check failed with: 
+- GD library missing 
+- PDO MySQL not loaded 
+- Intl extension missing 
+Solution :  sudo dnf install php8.2-gd php8.2-intl php8.2-mysqlnd -y sudo systemctl restart httpd  All checks turned green. 
+
+RDS Database Setup 
+
+Created RDS MySQL instance: - Engine: MySQL 
+- Instance class: db.t3.micro (Free Tier) - Public access: Yes (for simplicity during setup) 
+- Database name: prestashop - Username: puser 
+Struggles & Fixes  : - Connection failed  : Can't connect to MySQL server 
+Access denied 
+
+Causes  : 
+1. RDS security group did not allow port 3306 from EC2 security group 
+2. Database name mismatch
+3. Initial public access misconfiguration Solutions  : - Added inbound rule to RDS security group: MySQL (3306) from EC2 security group ID 
+- Verified RDS endpoint, DB name, user, password in installer 
+After fixes installer connected successfully and created tables 
+
+
+
+
+
+Installation Timeout During final installation steps: 
+Cause  : Low memory on t2.micro during heavy operations (table creation, cache, modules). 
+Solution : 
+- Added swap space (2 GB)
+- Tuned PHP-FPM for low memory
+Refreshed page after timeout → installation had completed in background. 
+
+8. Post-Installation Issues & Fixes 
+- 500 Internal Server Error in back office → enabled debug mode ( _PS_MODE_DEV_ = true ) + cleared cache ( rm -rf /var/www/html/var/cache/  ) + fixed permissions.
+ - 404 Not Found on admin URL → used full path  /index.php  to access login → regenerated .htaccess. 
+- Renamed admin folder to  admin_mystore_1771494920  for security. 
+- Deleted install  folder. 
+
+
+
+
+Final Result PrestaShop 9.0.3 is fully installed, running on EC2 (web server) with RDS (database) on a separate instance, publicly accessible, and secured with renamed admin folder and deleted install directory. All steps stayed within AWS Free Tier limits. This assignment demonstrates real-world troubleshooting: memory management, configuration debugging, security group rules, and PHP compatibility core skills in cybersecurity and system administration.
+
+
+admin page
+
+
+
+Summary of Key Lessons Learned 
+- Security groups are critical even a small IP change can block SSH or DB access.
+ - PHP version and extensions must exactly match PrestaShop requirements.
+- Low-memory instances (t2/t3.micro) need swap + careful PHP-FPM tuning. 
+- RDS requires explicit inbound rules from EC2. 
+- Most errors are configuration related (permissions, paths, security groups, syntax) rather than code bugs. 
+- Always enable debug mode early to see real errors instead of generic 500/503 messages. 
